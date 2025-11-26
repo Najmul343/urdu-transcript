@@ -2,3 +2,4 @@ streamlit
 faster-whisper
 torch
 pydub
+audioop-lts
