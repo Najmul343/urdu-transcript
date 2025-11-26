@@ -1,74 +1,77 @@
 import streamlit as st
 from faster_whisper import WhisperModel
-import tempfile
 import os
+from pydub import AudioSegment
+import torch
 
-# ---------------------------------------------------------
-# Streamlit Config
-# ---------------------------------------------------------
-st.set_page_config(
-    page_title="Urdu Transcriber",
-    page_icon="📝",
-    layout="centered"
-)
+# Page Config
+st.set_page_config(page_title="Urdu Transcriber (Tiny)", page_icon="🎤")
 
-st.title("🇵🇰 Urdu Audio/Video Transcriber")
-st.markdown("### WhatsApp voice → Beautiful Urdu text")
-st.caption("2025 • CPU Optimized • Cloud Ready")
+st.title("🎤 Urdu Audio Transcriber")
+st.write("Upload an audio/video file. (Using **Tiny** model for speed)")
 
-# ---------------------------------------------------------
-# Load Whisper Model
-# ---------------------------------------------------------
-@st.cache_resource
-def load_model():
-    return WhisperModel(
-        "tiny",   # safest for cloud
-        device="cpu",
-        compute_type="int8"
-    )
+# Hardcoded Model
+model_size = "tiny"
 
-model = load_model()
-st.success("Model loaded successfully ✔️")
+# File Uploader
+uploaded_file = st.file_uploader("Choose a file", type=["mp3", "wav", "m4a", "mp4", "mov"])
 
-# ---------------------------------------------------------
-# File Upload
-# ---------------------------------------------------------
-file = st.file_uploader(
-    "Upload Audio or Video File",
-    type=["mp3", "wav", "m4a", "mp4", "webm", "ogg"]
-)
+if uploaded_file is not None:
+    st.video(uploaded_file) # Play the audio/video to verify
+    
+    if st.button("Transcribe Now"):
+        with st.spinner(f"Processing with {model_size} model..."):
+            try:
+                # --- Save uploaded file temporarily ---
+                temp_filename = "temp_upload" + os.path.splitext(uploaded_file.name)[1]
+                with open(temp_filename, "wb") as f:
+                    f.write(uploaded_file.getbuffer())
 
-# ---------------------------------------------------------
-# Processing
-# ---------------------------------------------------------
-if file:
-    st.audio(file)
+                # --- Step 1: Convert to WAV ---
+                st.text("Converting audio format...")
+                audio = AudioSegment.from_file(temp_filename)
+                audio = audio.set_frame_rate(16000).set_channels(1)
+                wav_path = "converted_audio.wav"
+                audio.export(wav_path, format="wav")
 
-    if st.button("Transcribe to Urdu"):
-        # Save temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=file.name) as tmp:
-            tmp.write(file.read())
-            path = tmp.name
+                # --- Step 2: Load Model ---
+                # Detect hardware (Force int8 on CPU to prevent errors)
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+                compute_type = "float16" if device == "cuda" else "int8"
+                
+                # Initialize Model
+                model = WhisperModel(
+                    model_size, 
+                    device=device, 
+                    compute_type=compute_type
+                )
 
-        with st.spinner("Transcribing..."):
-            segments, info = model.transcribe(
-                path, language="ur", beam_size=5
-            )
-            text = " ".join([seg.text for seg in segments])
+                # --- Step 3: Transcribe ---
+                st.text("Transcribing in Urdu...")
+                segments, info = model.transcribe(
+                    wav_path, 
+                    language="ur", 
+                    beam_size=5
+                )
 
-        os.remove(path)
+                # --- Step 4: Output ---
+                st.success(f"Done! (Confidence: {info.language_probability:.0%})")
+                
+                full_text = ""
+                output_container = st.empty()
+                segments_list = list(segments) 
+                
+                for segment in segments_list:
+                    text = segment.text.strip()
+                    full_text += text + " "
 
-        st.success("Transcription Complete ✔️")
-        st.markdown("### Urdu Transcript:")
-        st.write(text)
+                # Display Final Text
+                st.markdown("### 📝 Urdu Transcription:")
+                st.text_area("Result:", full_text, height=300)
+                
+                # Cleanup temp files
+                if os.path.exists(temp_filename): os.remove(temp_filename)
+                if os.path.exists(wav_path): os.remove(wav_path)
 
-        st.download_button(
-            "Download Urdu Text",
-            text,
-            file_name="urdu_transcript.txt"
-        )
-
-        st.balloons()
-
-else:
-    st.info("Please upload an audio/video file.")
+            except Exception as e:
+                st.error(f"An error occurred: {e}")
