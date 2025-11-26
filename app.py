@@ -12,7 +12,7 @@ st.title("🎤 Urdu Audio Transcriber")
 st.write("Upload an audio/video file. (Live streaming output)")
 
 # Hardcoded Model
-model_size = "tiny"
+model_size = "base"
 
 # File Uploader
 uploaded_file = st.file_uploader("Choose a file", type=["mp3", "wav", "m4a", "mp4", "mov"])
